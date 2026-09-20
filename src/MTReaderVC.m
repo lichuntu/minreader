@@ -922,7 +922,7 @@ static UIEdgeInsets MTPageInsets(void) {
     pvc.dataSource = self;
     pvc.delegate = self;
     if (ts == UIPageViewControllerTransitionStylePageCurl) {
-        pvc.isDoubleSided = NO;
+        pvc.doubleSided = NO;
     }
 
     [self addChildViewController:pvc];
