@@ -481,7 +481,13 @@ static UIEdgeInsets MTPageInsets(void) {
     self.settingsPanel = [[MTSettingsPanel alloc] initWithFrame:CGRectZero];
     self.settingsPanel.translatesAutoresizingMaskIntoConstraints = NO;
     self.settingsPanel.hidden = YES;
-    [self.bottomBar addSubview:self.settingsPanel];
+    self.settingsPanel.layer.cornerRadius = 14;
+    self.settingsPanel.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
+    self.settingsPanel.clipsToBounds = YES;
+    // 注意：必须挂在 self.view 上，不能挂在底栏上。
+    // 面板位置在底栏上方（超出底栏 bounds），而 hitTest 不会命中超出父视图范围的子视图，
+    // 挂错地方会导致点击穿透到下层页面 → 变成翻页。
+    [self.view addSubview:self.settingsPanel];
     __weak typeof(self) ws = self;
     self.settingsPanel.onFontDelta = ^(CGFloat d) { [ws changeFontBy:d]; };
     self.settingsPanel.onColorPick = ^(NSInteger i) { [ws applyBackgroundIndex:i]; };
@@ -521,8 +527,8 @@ static UIEdgeInsets MTPageInsets(void) {
         [self.progressLabel.trailingAnchor constraintEqualToAnchor:self.bottomBar.trailingAnchor constant:-16],
         [self.progressLabel.bottomAnchor constraintEqualToAnchor:row1.topAnchor constant:-6],
 
-        [self.settingsPanel.leadingAnchor constraintEqualToAnchor:self.bottomBar.leadingAnchor],
-        [self.settingsPanel.trailingAnchor constraintEqualToAnchor:self.bottomBar.trailingAnchor],
+        [self.settingsPanel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.settingsPanel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [self.settingsPanel.bottomAnchor constraintEqualToAnchor:self.bottomBar.topAnchor constant:-6],
     ]];
 
@@ -577,34 +583,18 @@ static UIEdgeInsets MTPageInsets(void) {
     if (cached) return cached;
 
     CGSize size = [self contentSize];
-    NSString *body = [self.book textOfChapter:index];
-    NSString *heading = self.book.chapters[index].title ?: @"";
     UIColor *bg = MTBackgroundColorAtIndex(MTBackgroundIndex());
     UIColor *fg = MTTextColorFor(bg);
     CGFloat fontSize = MTFontSize();
 
-    NSMutableParagraphStyle *ps = [NSMutableParagraphStyle defaultParagraphStyle].mutableCopy;
-    ps.lineSpacing = fontSize * 0.45;
-    ps.paragraphSpacing = fontSize * 0.5;
-
-    NSDictionary *bodyAttr = @{
-        NSFontAttributeName: [UIFont systemFontOfSize:fontSize],
-        NSForegroundColorAttributeName: fg,
-        NSParagraphStyleAttributeName: ps,
-    };
-    NSMutableParagraphStyle *hps = ps.mutableCopy;
-    hps.paragraphSpacing = fontSize * 0.9;
-
-    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] init];
-    if (self.book.chapters.count > 1 && heading.length) {
-        [attr appendAttributedString:[[NSAttributedString alloc] initWithString:
-            [heading stringByAppendingString:@"\n"] attributes:@{
-                NSFontAttributeName: [UIFont boldSystemFontOfSize:fontSize * 1.12],
-                NSForegroundColorAttributeName: fg,
-                NSParagraphStyleAttributeName: hps,
-            }]];
+    NSAttributedString *attr = [self.book attributedTextForChapter:index
+                                                          fontSize:fontSize
+                                                             color:fg
+                                                           maxSize:size];
+    if (attr.length == 0) {
+        attr = [[NSAttributedString alloc] initWithString:@"（本章没有可显示的内容）"
+                                             attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:fontSize]}];
     }
-    [attr appendAttributedString:[[NSAttributedString alloc] initWithString:body attributes:bodyAttr]];
 
     NSTextStorage *ts = [[NSTextStorage alloc] initWithAttributedString:attr];
     NSLayoutManager *lm = [[NSLayoutManager alloc] init];

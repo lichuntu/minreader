@@ -286,10 +286,15 @@
 
         NSString *html = [MTTextUtil decodeTextData:d];
         NSString *text = [MTTextUtil plainTextFromHTML:html];
-        if (text.length < 2) continue;
+
+        // 只有图没文字的页面（典型：封面）也要保留
+        BOOL hasImage = [html rangeOfString:@"<img" options:NSCaseInsensitiveSearch].location != NSNotFound;
+        if (text.length < 2 && !hasImage) continue;
 
         MTChapter *c = [MTChapter new];
         c.text = text;
+        c.html = html;
+        c.basePath = [full stringByDeletingLastPathComponent];
         c.title = [self chapterTitleFromHTML:html fallback:
                    [NSString stringWithFormat:@"第 %lu 节", (unsigned long)chapters.count + 1]];
         [chapters addObject:c];
@@ -301,6 +306,8 @@
         return NO;
     }
     book.chapters = chapters;
+    book.zip = zip;                 // 保持打开，供读取插图使用
+    if (!book.imageCache) book.imageCache = [NSMutableDictionary dictionary];
     return YES;
 }
 
@@ -437,6 +444,52 @@
                                                   range:NSMakeRange(0, text.length)]) {
         [out addObject:[NSValue valueWithRange:m.range]];
     }
+    return out;
+}
+
+// ---------------- 富文本 (给阅读器排版用) ----------------
+
+- (NSAttributedString *)attributedTextForChapter:(NSUInteger)index
+                                        fontSize:(CGFloat)fontSize
+                                           color:(UIColor *)color
+                                         maxSize:(CGSize)maxSize {
+    if (index >= self.chapters.count) return [[NSAttributedString alloc] initWithString:@""];
+    MTChapter *c = self.chapters[index];
+
+    NSMutableParagraphStyle *ps = [NSMutableParagraphStyle defaultParagraphStyle].mutableCopy;
+    ps.lineSpacing = fontSize * 0.45;
+    ps.paragraphSpacing = fontSize * 0.5;
+
+    // EPUB：走 HTML 富文本，保住封面/插图/标题层级
+    if (self.format == MTBookFormatEPUB && c.html.length) {
+        return [MTTextUtil attributedStringFromHTML:c.html
+                                                zip:self.zip
+                                           basePath:c.basePath
+                                           fontSize:fontSize
+                                              color:color
+                                            maxSize:maxSize
+                                         imageCache:self.imageCache];
+    }
+
+    // TXT / Markdown：纯文本 + 章节标题
+    NSString *body = [self textOfChapter:index];
+    NSMutableAttributedString *out = [[NSMutableAttributedString alloc] init];
+    NSString *heading = c.title ?: @"";
+    if (self.chapters.count > 1 && heading.length) {
+        NSMutableParagraphStyle *hps = ps.mutableCopy;
+        hps.paragraphSpacing = fontSize * 0.9;
+        [out appendAttributedString:[[NSAttributedString alloc] initWithString:
+            [heading stringByAppendingString:@"\n"] attributes:@{
+                NSFontAttributeName: [UIFont boldSystemFontOfSize:fontSize * 1.12],
+                NSForegroundColorAttributeName: color,
+                NSParagraphStyleAttributeName: hps,
+            }]];
+    }
+    [out appendAttributedString:[[NSAttributedString alloc] initWithString:body attributes:@{
+        NSFontAttributeName: [UIFont systemFontOfSize:fontSize],
+        NSForegroundColorAttributeName: color,
+        NSParagraphStyleAttributeName: ps,
+    }]];
     return out;
 }
 
