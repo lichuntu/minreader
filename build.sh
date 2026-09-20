@@ -38,6 +38,7 @@ xcrun --sdk iphoneos clang \
   -I src \
   -framework UIKit \
   -framework Foundation \
+  -framework UniformTypeIdentifiers \
   -lz \
   -o "$APP_DIR/$APP_NAME" \
   $SRCS
