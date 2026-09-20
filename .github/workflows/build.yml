@@ -1,0 +1,29 @@
+name: build-ipa
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null | tail -3 || true
+          python3 --version || true
+
+      - name: 编译并打包 IPA
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: bash ./build.sh
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinReader-unsigned
+          path: dist/*.ipa
+          if-no-files-found: error

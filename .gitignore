@@ -1,0 +1,8 @@
+build/
+dist/
+*.ipa
+*.dylib
+*.o
+.DS_Store
+__pycache__/
+assets/
