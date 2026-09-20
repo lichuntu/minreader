@@ -39,11 +39,15 @@ typedef NS_ENUM(NSInteger, MTBookFormat) {
 /// 取第 index 章正文（TXT 懒加载切片）
 - (NSString *)textOfChapter:(NSUInteger)index;
 
-/// 按当前字号/正文色生成该章的富文本（EPUB 会带上图片与标题层级）
+/// 按当前字号/正文色生成该章的富文本（EPUB 会带上图片、颜色与标题层级）
 - (NSAttributedString *)attributedTextForChapter:(NSUInteger)index
                                         fontSize:(CGFloat)fontSize
                                            color:(UIColor *)color
+                                      background:(UIColor *)background
                                          maxSize:(CGSize)maxSize;
+
+/// 该章正文字数（目录里显示用）
+- (NSUInteger)characterCountOfChapter:(NSUInteger)index;
 
 - (NSUInteger)totalCharacters;
 @end
@@ -59,6 +63,7 @@ typedef NS_ENUM(NSInteger, MTBookFormat) {
                                         basePath:(NSString *)basePath
                                         fontSize:(CGFloat)fontSize
                                            color:(UIColor *)color
+                                      background:(UIColor *)background
                                          maxSize:(CGSize)maxSize
                                       imageCache:(NSMutableDictionary *)cache;
 /// 规范 EPUB 内部相对路径（处理 ../ 与百分号编码）

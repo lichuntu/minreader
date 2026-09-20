@@ -394,6 +394,34 @@
             NSString *title = [text substringWithRange:titleRange];
             title = [title stringByTrimmingCharactersInSet:
                      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+            // 很多 txt 把「第1章」和章节名分成两行 → 把下一行也抓来做标题
+            static NSRegularExpression *bareRe = nil;
+            static dispatch_once_t onceToken;
+            dispatch_once(&onceToken, ^{
+                bareRe = [NSRegularExpression
+                    regularExpressionWithPattern:@"^第[0-9零一二三四五六七八九十百千万两]{1,12}[章节回卷篇]$"
+                                         options:0 error:NULL];
+            });
+            if ([bareRe numberOfMatchesInString:title options:0
+                                          range:NSMakeRange(0, title.length)] > 0) {
+                NSUInteger p = bodyStart;
+                while (p < text.length) {
+                    unichar ch = [text characterAtIndex:p];
+                    if (ch == '\n' || ch == ' ' || ch == '\t' || ch == 0x3000) p++;
+                    else break;
+                }
+                if (p < text.length) {
+                    NSRange lineRange = [text lineRangeForRange:NSMakeRange(p, 0)];
+                    NSString *line = [[text substringWithRange:lineRange]
+                                      stringByTrimmingCharactersInSet:
+                                      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    if (line.length > 0 && line.length <= 30 &&
+                        ![line hasPrefix:@"第"]) {
+                        title = [title stringByAppendingFormat:@" %@", line];
+                    }
+                }
+            }
             if (title.length > 50) title = [title substringToIndex:50];
 
             MTChapter *c = [MTChapter new];
@@ -452,6 +480,7 @@
 - (NSAttributedString *)attributedTextForChapter:(NSUInteger)index
                                         fontSize:(CGFloat)fontSize
                                            color:(UIColor *)color
+                                      background:(UIColor *)background
                                          maxSize:(CGSize)maxSize {
     if (index >= self.chapters.count) return [[NSAttributedString alloc] initWithString:@""];
     MTChapter *c = self.chapters[index];
@@ -460,13 +489,14 @@
     ps.lineSpacing = fontSize * 0.45;
     ps.paragraphSpacing = fontSize * 0.5;
 
-    // EPUB：走 HTML 富文本，保住封面/插图/标题层级
+    // EPUB：走 HTML 富文本，保住封面/插图/颜色/标题层级
     if (self.format == MTBookFormatEPUB && c.html.length) {
         return [MTTextUtil attributedStringFromHTML:c.html
                                                 zip:self.zip
                                            basePath:c.basePath
                                            fontSize:fontSize
                                               color:color
+                                         background:background
                                             maxSize:maxSize
                                          imageCache:self.imageCache];
     }
@@ -503,6 +533,14 @@
         return [self.plainText substringWithRange:c.range];
     }
     return @"";
+}
+
+- (NSUInteger)characterCountOfChapter:(NSUInteger)index {
+    if (index >= self.chapters.count) return 0;
+    MTChapter *c = self.chapters[index];
+    if (c.text.length) return c.text.length;
+    if (c.hasRange) return c.range.length;
+    return 0;
 }
 
 - (NSUInteger)totalCharacters {

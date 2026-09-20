@@ -340,6 +340,7 @@ static UIEdgeInsets MTPageInsets(void) {
 @interface MTChapterListVC : UITableViewController
 @property (nonatomic, strong) MTBook *book;
 @property (nonatomic, assign) NSUInteger current;
+@property (nonatomic, copy)   NSString *progressText;
 @property (nonatomic, copy)   void (^onPick)(NSUInteger index);
 @end
 
@@ -348,11 +349,34 @@ static UIEdgeInsets MTPageInsets(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"目录";
-    self.tableView.rowHeight = 48;
+    self.tableView.rowHeight = 58;
+    self.tableView.separatorInset = UIEdgeInsetsMake(0, 16, 0, 16);
     self.navigationItem.rightBarButtonItem =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                                       target:self
                                                       action:@selector(close)];
+    self.tableView.tableHeaderView = [self buildHeader];
+}
+
+- (UIView *)buildHeader {
+    UIView *h = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 92)];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, 16, h.bounds.size.width - 32, 24)];
+    title.text = self.book.title ?: @"";
+    title.font = [UIFont boldSystemFontOfSize:18];
+    title.numberOfLines = 1;
+
+    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(16, 42, h.bounds.size.width - 32, 18)];
+    NSString *author = self.book.author.length ? [self.book.author stringByAppendingString:@" · "] : @"";
+    sub.text = [NSString stringWithFormat:@"%@共 %lu 章%@",
+                author, (unsigned long)self.book.chapters.count,
+                self.progressText.length ? [@" · " stringByAppendingString:self.progressText] : @""];
+    sub.font = [UIFont systemFontOfSize:13];
+    sub.textColor = [UIColor secondaryLabelColor];
+
+    [h addSubview:title];
+    [h addSubview:sub];
+    return h;
 }
 
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
@@ -363,12 +387,26 @@ static UIEdgeInsets MTPageInsets(void) {
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"c"];
-    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
                                             reuseIdentifier:@"c"];
-    cell.textLabel.text = self.book.chapters[ip.row].title;
-    cell.textLabel.font = [UIFont systemFontOfSize:15];
-    cell.accessoryType = (ip.row == self.current)
-        ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    MTChapter *ch = self.book.chapters[ip.row];
+    BOOL here = (ip.row == self.current);
+
+    cell.textLabel.text = ch.title.length ? ch.title
+                                          : [NSString stringWithFormat:@"第 %lu 节", (unsigned long)ip.row + 1];
+    cell.textLabel.font = [UIFont systemFontOfSize:15
+                                               weight:here ? UIFontWeightSemibold : UIFontWeightRegular];
+    cell.textLabel.numberOfLines = 1;
+
+    NSUInteger chars = [self.book characterCountOfChapter:ip.row];
+    NSString *detail = chars > 0
+        ? [NSString stringWithFormat:@"%@%lu 字", here ? @"正在阅读 · " : @"", (unsigned long)chars]
+        : (here ? @"正在阅读" : @"");
+    cell.detailTextLabel.text = detail;
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:12];
+    cell.detailTextLabel.textColor = here ? self.view.tintColor : [UIColor secondaryLabelColor];
+
+    cell.accessoryType = here ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     return cell;
 }
 
@@ -449,14 +487,12 @@ static UIEdgeInsets MTPageInsets(void) {
     [self.view addSubview:self.topBar];
 
     UIButton *back = [self barButton:@"‹ 书架" action:@selector(goBack)];
-    UIButton *toc  = [self barButton:@"目录" action:@selector(showTOC)];
     self.titleLabel = [[UILabel alloc] init];
     self.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     self.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.topBar addSubview:back];
-    [self.topBar addSubview:toc];
     [self.topBar addSubview:self.titleLabel];
 
     // ---- 底栏 ----
@@ -464,10 +500,9 @@ static UIEdgeInsets MTPageInsets(void) {
     self.bottomBar.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.bottomBar];
 
-    UIButton *prev = [self barButton:@"上一章" action:@selector(prevChapter)];
-    UIButton *next = [self barButton:@"下一章" action:@selector(nextChapter)];
+    UIButton *tocBtn = [self barButton:@"目录" action:@selector(showTOC)];
     UIButton *set  = [self barButton:@"设置" action:@selector(toggleSettings)];
-    UIStackView *row1 = [[UIStackView alloc] initWithArrangedSubviews:@[prev, next, set]];
+    UIStackView *row1 = [[UIStackView alloc] initWithArrangedSubviews:@[tocBtn, set]];
     row1.distribution = UIStackViewDistributionFillEqually;
     row1.translatesAutoresizingMaskIntoConstraints = NO;
     [self.bottomBar addSubview:row1];
@@ -506,12 +541,10 @@ static UIEdgeInsets MTPageInsets(void) {
 
         [back.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:8],
         [back.centerYAnchor constraintEqualToAnchor:safe.topAnchor constant:22],
-        [toc.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-8],
-        [toc.centerYAnchor constraintEqualToAnchor:safe.topAnchor constant:22],
         [self.titleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [self.titleLabel.centerYAnchor constraintEqualToAnchor:safe.topAnchor constant:22],
         [self.titleLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:back.trailingAnchor constant:8],
-        [self.titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:toc.leadingAnchor constant:-8],
+        [self.titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:safe.trailingAnchor constant:-12],
 
         [self.bottomBar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.bottomBar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
@@ -590,6 +623,7 @@ static UIEdgeInsets MTPageInsets(void) {
     NSAttributedString *attr = [self.book attributedTextForChapter:index
                                                           fontSize:fontSize
                                                              color:fg
+                                                        background:bg
                                                            maxSize:size];
     if (attr.length == 0) {
         attr = [[NSAttributedString alloc] initWithString:@"（本章没有可显示的内容）"
@@ -1016,6 +1050,13 @@ static UIEdgeInsets MTPageInsets(void) {
     MTChapterListVC *toc = [[MTChapterListVC alloc] initWithStyle:UITableViewStylePlain];
     toc.book = self.book;
     toc.current = self.chapterIndex;
+    NSUInteger total = self.book.chapters.count;
+    MTChapterLayout *lay = self.layouts[@(self.chapterIndex)];
+    NSUInteger pages = MAX((NSUInteger)1, lay ? lay.ranges.count : 1);
+    CGFloat within = (CGFloat)(self.pageIndex + 1) / (CGFloat)pages;
+    CGFloat pct = ((CGFloat)self.chapterIndex + within) / (CGFloat)MAX(total, (NSUInteger)1) * 100.0;
+    toc.progressText = [NSString stringWithFormat:@"读到第 %lu 章 · %.0f%%",
+                        (unsigned long)(self.chapterIndex + 1), pct];
     __weak typeof(self) ws = self;
     toc.onPick = ^(NSUInteger idx) {
         [ws jumpTo:idx page:0 animated:NO direction:UIPageViewControllerNavigationDirectionForward];
