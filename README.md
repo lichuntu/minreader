@@ -4,7 +4,21 @@
 
 ## 下载
 
-见 [Releases](https://github.com/lichuntu/minreader/releases)。
+**方式一（推荐，不依赖 GitHub 网页）**：直接点对话里的文件链接
+**方式二**：`https://github.com/lichuntu/minreader/releases/download/v1.3/MinReader.ipa`
+
+## v1.3 更新
+
+- **EPUB 读取外部 CSS**：EPUB 的样式大多写在独立 `.css` 文件里（`<link>` 引用），
+  之前的版本完全没读 → 彩色文字/特殊字号全部丢失。现在会收集并解析 CSS。
+  支持：颜色（`#rgb` / `#rrggbb` / `rgb()` / `rgba()` / 具名色）、`font-weight`、
+  `font-style`、`text-decoration`、`font-size`（% / em / rem / larger / smaller）。
+  优先级：内联 `style` > `class` > 标签规则 > 标签语义。
+  **颜色可读性保护**：CSS 里的颜色如果和背景亮度太接近（比如黑底黑字），
+  会自动往反方向调整，保证看得见。
+- **目录大幅增强**：书名、作者、总章数、阅读进度百分比、每章字数、当前章高亮并标记「正在阅读」
+- **底栏改为「目录 + 设置」**，去掉右上角目录按钮
+- **TXT 章节名改进**：兼容「第1章」与章节名分成两行的情况（如「第1章」+「喝酒不开车」）
 
 ## 支持格式
 
