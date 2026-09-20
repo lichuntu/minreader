@@ -7,6 +7,7 @@
 //
 
 #import "MTReaderVC.h"
+#import "MTCover.h"
 
 // ============================================================
 //  设置项
@@ -341,10 +342,14 @@ static UIEdgeInsets MTPageInsets(void) {
 @property (nonatomic, strong) MTBook *book;
 @property (nonatomic, assign) NSUInteger current;
 @property (nonatomic, copy)   NSString *progressText;
+@property (nonatomic, assign) CGFloat charsPerPage;   // 估算页码用，<=0 则不显示
 @property (nonatomic, copy)   void (^onPick)(NSUInteger index);
 @end
 
-@implementation MTChapterListVC
+@implementation MTChapterListVC {
+    NSArray<NSNumber *> *_prefixChars;   // 累计字数，用于估算页码
+    BOOL _descending;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -356,30 +361,99 @@ static UIEdgeInsets MTPageInsets(void) {
                                                       target:self
                                                       action:@selector(close)];
     self.tableView.tableHeaderView = [self buildHeader];
+    [self computePrefix];
 }
 
+- (void)computePrefix {
+    NSMutableArray *out = [NSMutableArray arrayWithCapacity:self.book.chapters.count];
+    NSUInteger sum = 0;
+    for (NSUInteger i = 0; i < self.book.chapters.count; i++) {
+        [out addObject:@(sum)];
+        sum += [self.book characterCountOfChapter:i];
+    }
+    _prefixChars = out;
+}
+
+// ---------------- 头部：封面 + 书名 + 作者 + 进度 ----------------
+
 - (UIView *)buildHeader {
-    UIView *h = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 92)];
+    CGFloat w = self.tableView.bounds.size.width;
+    UIView *h = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 104)];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, 16, h.bounds.size.width - 32, 24)];
+    CGFloat coverW = 62, coverH = 86;
+    UIImageView *cover = [[UIImageView alloc] initWithFrame:CGRectMake(16, 14, coverW, coverH)];
+    cover.contentMode = UIViewContentModeScaleAspectFill;
+    cover.clipsToBounds = YES;
+    cover.layer.cornerRadius = 5;
+    cover.layer.borderWidth = 0.5;
+    cover.layer.borderColor = [UIColor colorWithWhite:0.5 alpha:0.28].CGColor;
+    cover.backgroundColor = [UIColor tertiarySystemFillColor];
+    cover.image = [MTCover coverForPath:self.book.path];
+    [h addSubview:cover];
+
+    CGFloat textX = 16 + coverW + 12;
+    CGFloat textW = w - textX - 16;
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(textX, 20, textW, 24)];
     title.text = self.book.title ?: @"";
-    title.font = [UIFont boldSystemFontOfSize:18];
+    title.font = [UIFont boldSystemFontOfSize:17];
     title.numberOfLines = 1;
-
-    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(16, 42, h.bounds.size.width - 32, 18)];
-    NSString *author = self.book.author.length ? [self.book.author stringByAppendingString:@" · "] : @"";
-    sub.text = [NSString stringWithFormat:@"%@共 %lu 章%@",
-                author, (unsigned long)self.book.chapters.count,
-                self.progressText.length ? [@" · " stringByAppendingString:self.progressText] : @""];
-    sub.font = [UIFont systemFontOfSize:13];
-    sub.textColor = [UIColor secondaryLabelColor];
-
+    title.lineBreakMode = NSLineBreakByTruncatingTail;
     [h addSubview:title];
-    [h addSubview:sub];
+
+    UILabel *author = [[UILabel alloc] initWithFrame:CGRectMake(textX, 46, textW, 18)];
+    author.text = self.book.author.length ? self.book.author : @"未知作者";
+    author.font = [UIFont systemFontOfSize:13];
+    author.textColor = [UIColor secondaryLabelColor];
+    [h addSubview:author];
+
+    UILabel *stat = [[UILabel alloc] initWithFrame:CGRectMake(textX, 68, textW, 18)];
+    stat.text = self.progressText ?: @"";
+    stat.font = [UIFont systemFontOfSize:12];
+    stat.textColor = [UIColor tertiaryLabelColor];
+    [h addSubview:stat];
+
     return h;
 }
 
-- (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
+// ---------------- 章节数 / 倒序 ----------------
+
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)section {
+    CGFloat w = tv.bounds.size.width;
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 40)];
+    v.backgroundColor = [UIColor secondarySystemBackgroundColor];
+
+    UILabel *count = [[UILabel alloc] initWithFrame:CGRectMake(16, 0, w - 120, 40)];
+    count.text = [NSString stringWithFormat:@"共 %lu 章", (unsigned long)self.book.chapters.count];
+    count.font = [UIFont systemFontOfSize:13];
+    count.textColor = [UIColor secondaryLabelColor];
+    [v addSubview:count];
+
+    UIButton *sort = [UIButton buttonWithType:UIButtonTypeSystem];
+    sort.frame = CGRectMake(w - 96, 0, 80, 40);
+    [sort setTitle:(_descending ? @"正序" : @"倒序") forState:UIControlStateNormal];
+    sort.titleLabel.font = [UIFont systemFontOfSize:14];
+    [sort addTarget:self action:@selector(toggleSort) forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:sort];
+
+    return v;
+}
+
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s { return 40; }
+
+- (void)toggleSort {
+    _descending = !_descending;
+    [self.tableView reloadData];
+}
+
+// ---------------- 章节映射（支持倒序） ----------------
+
+- (NSUInteger)chapterAtIndexPath:(NSIndexPath *)ip {
+    NSUInteger n = self.book.chapters.count;
+    return _descending ? (n - 1 - ip.row) : ip.row;
+}
+
+// ---------------- 表格 ----------------
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     return self.book.chapters.count;
@@ -389,30 +463,67 @@ static UIEdgeInsets MTPageInsets(void) {
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"c"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
                                             reuseIdentifier:@"c"];
-    MTChapter *ch = self.book.chapters[ip.row];
-    BOOL here = (ip.row == self.current);
+    NSUInteger idx = [self chapterAtIndexPath:ip];
+    MTChapter *ch = self.book.chapters[idx];
+    BOOL here = (idx == self.current);
+    UIColor *accent = [UIColor colorWithRed:0.85 green:0.45 blue:0.10 alpha:1];
 
-    cell.textLabel.text = ch.title.length ? ch.title
-                                          : [NSString stringWithFormat:@"第 %lu 节", (unsigned long)ip.row + 1];
-    cell.textLabel.font = [UIFont systemFontOfSize:15
+    cell.textLabel.text = ch.title.length
+        ? ch.title
+        : [NSString stringWithFormat:@"第 %lu 节", (unsigned long)idx + 1];
+    cell.textLabel.font = [UIFont systemFontOfSize:15.5
                                                weight:here ? UIFontWeightSemibold : UIFontWeightRegular];
+    cell.textLabel.textColor = here ? accent : [UIColor labelColor];
     cell.textLabel.numberOfLines = 1;
 
-    NSUInteger chars = [self.book characterCountOfChapter:ip.row];
-    NSString *detail = chars > 0
-        ? [NSString stringWithFormat:@"%@%lu 字", here ? @"正在阅读 · " : @"", (unsigned long)chars]
-        : (here ? @"正在阅读" : @"");
+    NSUInteger chars = [self.book characterCountOfChapter:idx];
+    NSString *detail;
+    if (here) {
+        detail = self.progressText.length
+            ? [NSString stringWithFormat:@"%lu 字 · 正在阅读", (unsigned long)chars]
+            : [NSString stringWithFormat:@"%lu 字 · 正在阅读", (unsigned long)chars];
+    } else {
+        detail = [NSString stringWithFormat:@"%lu 字", (unsigned long)chars];
+    }
     cell.detailTextLabel.text = detail;
     cell.detailTextLabel.font = [UIFont systemFontOfSize:12];
-    cell.detailTextLabel.textColor = here ? self.view.tintColor : [UIColor secondaryLabelColor];
+    cell.detailTextLabel.textColor = here ? accent : [UIColor secondaryLabelColor];
 
-    cell.accessoryType = here ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    // 右侧页码
+    if (cell.accessoryView == nil) {
+        UILabel *pageLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 92, 40)];
+        pageLabel.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightRegular];
+        pageLabel.textAlignment = NSTextAlignmentRight;
+        pageLabel.tag = 99;
+        cell.accessoryView = pageLabel;
+    }
+    UILabel *pageLabel = (UILabel *)[cell.accessoryView viewWithTag:99];
+    pageLabel.textColor = here ? accent : [UIColor tertiaryLabelColor];
+    pageLabel.text = [self pageTextForChapter:idx current:here];
+
+    cell.backgroundColor = here
+        ? [accent colorWithAlphaComponent:0.07]
+        : [UIColor clearColor];
     return cell;
+}
+
+/// 估算页码：用「累计字数 ÷ 每页字数」
+- (NSString *)pageTextForChapter:(NSUInteger)idx current:(BOOL)here {
+    if (self.charsPerPage <= 0 || idx >= _prefixChars.count) return here ? @"正在阅读" : @"";
+    NSUInteger page = (NSUInteger)(_prefixChars[idx].doubleValue / self.charsPerPage) + 1;
+    NSUInteger totalChars = 0;
+    for (NSNumber *n in _prefixChars) totalChars = MAX(totalChars, n.unsignedIntegerValue);
+    totalChars += [self.book characterCountOfChapter:self.book.chapters.count - 1];
+    NSUInteger totalPages = (NSUInteger)(totalChars / self.charsPerPage) + 1;
+
+    if (here) return [NSString stringWithFormat:@"读到 %lu/%lu 页", (unsigned long)page,
+                                                (unsigned long)totalPages];
+    return [NSString stringWithFormat:@"%lu", (unsigned long)page];
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    if (self.onPick) self.onPick(ip.row);
+    if (self.onPick) self.onPick([self chapterAtIndexPath:ip]);
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -1057,6 +1168,12 @@ static UIEdgeInsets MTPageInsets(void) {
     CGFloat pct = ((CGFloat)self.chapterIndex + within) / (CGFloat)MAX(total, (NSUInteger)1) * 100.0;
     toc.progressText = [NSString stringWithFormat:@"读到第 %lu 章 · %.0f%%",
                         (unsigned long)(self.chapterIndex + 1), pct];
+
+    // 用当前章的实际排版估算「每页多少字」，供目录估算全书页码
+    NSUInteger charsInChapter = [self.book characterCountOfChapter:self.chapterIndex];
+    if (lay && lay.ranges.count > 0 && charsInChapter > 0) {
+        toc.charsPerPage = (CGFloat)charsInChapter / (CGFloat)lay.ranges.count;
+    }
     __weak typeof(self) ws = self;
     toc.onPick = ^(NSUInteger idx) {
         [ws jumpTo:idx page:0 animated:NO direction:UIPageViewControllerNavigationDirectionForward];

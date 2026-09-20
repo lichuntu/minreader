@@ -11,7 +11,7 @@
         didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    MTBookshelfVC *shelf = [[MTBookshelfVC alloc] initWithStyle:UITableViewStylePlain];
+    MTBookshelfVC *shelf = [[MTBookshelfVC alloc] init];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:shelf];
 
     // 深色模式下导航栏也不刺眼
